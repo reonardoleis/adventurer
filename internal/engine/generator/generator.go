@@ -2,7 +2,6 @@ package generator
 
 import (
 	"encoding/json"
-	"fmt"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -16,17 +15,19 @@ func Environment(
 ) (*entities.Environment, error) {
 	env := new(entities.Environment)
 
-	prompt := fmt.Sprintf(
-		PromptGenerateEnvironment,
-		[]interface{}{
+	prompt, err := PromptGenerateEnvironment.
+		Chain(Base).Chain(NumberOfCharacters).
+		Fill(
 			world.Name,
 			world.Description,
-			rand.Intn(6) + 2,
-		}...,
-	)
+			rand.Intn(6)+2,
+		)
+	if err != nil {
+		return nil, err
+	}
 
 	response, err := ai.Generate(
-		prompt, nil, 1024, 0.75,
+		prompt.String(), nil, 1024, 1,
 	)
 	if err != nil {
 		return nil, err
@@ -46,21 +47,29 @@ func Situation(
 	environment *entities.Environment,
 	startsBattle bool,
 ) (string, error) {
-	prompt := fmt.Sprintf(
-		PromptGenerateSituation,
-		[]interface{}{
-			world.Name, world.Description,
-			mainCharacter.Name + ": " + mainCharacter.Story,
-			mainCharacter.Race + " - " + mainCharacter.Class,
-			environment.LastSituation(), environment.FailedLastSituation,
-			environment.Name + ": " + environment.Description,
-			environment.GetCharacterData(),
+	prompt, err := PromptGenerateSituation.
+		Chain(Base).
+		Chain(MainCharacterInformation).
+		Chain(LastSituation).
+		Chain(CurrentEnvironment).
+		Chain(OtherCharactersInformation).
+		Fill(
 			startsBattle,
-		}...,
-	)
+			world.Name, world.Description,
+			mainCharacter.Name+mainCharacter.Story,
+			mainCharacter.Race+" - "+mainCharacter.Class,
+			environment.LastSituation(), environment.FailedLastSituation,
+			environment.Name+": "+environment.Description,
+			environment.GetCharacterData(),
+		)
+	if err != nil {
+		return "", err
+	}
 
 	situation, err := ai.Generate(
-		prompt, nil, 1024, 0.9,
+		prompt.String(), []string{
+			"STORY_LOG: " + world.StoryLog,
+		}, 1024, 1,
 	)
 	if err != nil {
 		return "", err
@@ -81,19 +90,23 @@ func Decision(
 	situation,
 	playerDecision string,
 ) (d DecisionResult, err error) {
-	prompt := fmt.Sprintf(
-		PromptGenerateDecision,
-		[]interface{}{
-			world.Name,
-			world.Description,
-			environment.Name + ": " + environment.Description,
-			situation,
-			playerDecision,
-		}...,
-	)
+	prompt, err := PromptGenerateDecision.
+		Chain(Base).
+		Chain(CurrentEnvironment).
+		Chain(LastSituation).
+		Fill(
+			world.Name, world.Description,
+			environment.Name+": "+environment.Description,
+			situation, environment.FailedLastSituation,
+		)
+	if err != nil {
+		return DecisionResult{}, err
+	}
 
 	response, err := ai.Generate(
-		prompt, nil, 1024, 0.5,
+		prompt.String(), []string{
+			"STORY_LOG: " + world.StoryLog,
+		}, 1024, 0.5,
 	)
 	if err != nil {
 		return DecisionResult{}, err
@@ -131,17 +144,22 @@ func DecisionOutcome(
 	playerSucceeded bool,
 	startedBattle bool,
 ) (string, error) {
-	prompt := fmt.Sprintf(
-		PromptGenerateDecisionOutcome,
-		[]interface{}{
+	prompt, err := PromptGenerateDecisionOutcome.
+		Chain(Base).
+		Chain(LastSituation).
+		Chain(LastPlayerDecision).
+		Fill(
 			world.Name, world.Description,
-			situation, playerDecision,
-			playerSucceeded, startedBattle,
-		}...,
-	)
+			situation, environment.FailedLastSituation,
+			playerDecision,
+			startedBattle, playerSucceeded,
+		)
+	if err != nil {
+		return "", err
+	}
 
 	response, err := ai.Generate(
-		prompt, nil, 1024, 0.5,
+		prompt.String(), nil, 1024, 0.5,
 	)
 	if err != nil {
 		return "", err

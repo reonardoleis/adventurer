@@ -23,7 +23,7 @@ func Generate(prompt string, additionalInformation []string, maxTokens int, temp
 
 	for i, info := range additionalInformation {
 		messages[i] = openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleAssistant,
+			Role:    openai.ChatMessageRoleSystem,
 			Content: info,
 		}
 	}

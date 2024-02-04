@@ -101,7 +101,7 @@ func (t *TerminalFrontend) Run() error {
 			return err
 		}
 
-		show(t.Environment.Present(), Yellow, true)
+		show(t.Environment.Present(), Blue, true)
 
 		for i := 0; i < 5; i++ {
 			show("Generating situation...", Green, true)
@@ -117,7 +117,10 @@ func (t *TerminalFrontend) Run() error {
 
 			show(situation, Yellow, true)
 
-			t.Environment.AddSituation(situation)
+			t.Environment.AddSituation("Situation: " + situation + "\n")
+
+			t.World.EnvironmentHistory = append(t.World.EnvironmentHistory, t.Environment)
+			t.World.GenerateStoryLogFromLastN(3)
 
 			playerDecision := askFor("What do you do?", Yellow)
 			for len(playerDecision) == 0 {
@@ -135,6 +138,7 @@ func (t *TerminalFrontend) Run() error {
 				return err
 			}
 
+			t.Environment.Situations[len(t.Environment.Situations)-1] = "Player decision (highly important): " + playerDecision + "\n"
 			roll := dice.Roll(1, 20).Value()
 			success := roll.Get() >= decisionResult.NeededRoll
 			startsBattle := decisionResult.AlwaysStartsBattle || (!success && decisionResult.FailStartsBattle)
@@ -150,6 +154,8 @@ func (t *TerminalFrontend) Run() error {
 			if err != nil {
 				return err
 			}
+
+			t.Environment.Situations[len(t.Environment.Situations)-1] = "Player decision outcome: " + outcome + "\n"
 
 			if startsBattle {
 				if decisionResult.FailStartsBattle {
