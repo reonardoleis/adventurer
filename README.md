@@ -1,4 +1,4 @@
-# Adventurer
+![](https://i.imgur.com/YO3PDld.png)
 A solo RPG system powered by AI content generation.
 
 ## Overview
