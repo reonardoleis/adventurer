@@ -9,6 +9,7 @@ import (
 type Savegame struct {
 	MainCharacter      *entities.Character   `json:"main_character"`
 	CurrentEnvironment *entities.Environment `json:"current_environment"`
+	World              *entities.World       `json:"world"`
 }
 
 func (s Savegame) JSON() []byte {

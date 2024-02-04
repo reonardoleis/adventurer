@@ -1,9 +1,25 @@
 package dice
 
-import "math/rand"
+import (
+	"fmt"
+	"math/rand"
+)
 
 type Dice struct {
 	Rolls []int
+}
+
+type Value struct {
+	Value int
+}
+
+func (v Value) Present() string {
+	n := fmt.Sprintf("%d", v.Value)
+	return "You rolled " + n
+}
+
+func (v Value) Get() int {
+	return v.Value
 }
 
 func Roll(count, sides int) Dice {
@@ -13,6 +29,14 @@ func Roll(count, sides int) Dice {
 		dice.Rolls = append(dice.Rolls, r)
 	}
 	return dice
+}
+
+func (d Dice) Value() Value {
+	if len(d.Rolls) == 0 {
+		return Value{Value: 0}
+	}
+
+	return Value{Value: d.Rolls[0]}
 }
 
 func (d Dice) Sum() int {

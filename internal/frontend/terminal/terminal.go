@@ -4,39 +4,58 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/reonardoleis/adventurer/internal/dice"
 	"github.com/reonardoleis/adventurer/internal/engine/character_creation"
 	"github.com/reonardoleis/adventurer/internal/engine/generator"
 	"github.com/reonardoleis/adventurer/internal/entities"
 	"github.com/reonardoleis/adventurer/internal/repositories"
+	"github.com/reonardoleis/adventurer/internal/tables"
 )
 
 type TerminalFrontend struct {
 	Character        *entities.Character
 	Environment      *entities.Environment
-	Generator        *generator.Generator
+	World            *entities.World
 	characterCreator *character_creation.CharacterCreator
 }
 
 func NewTerminal() *TerminalFrontend {
 	character := new(entities.Character)
 	environment := new(entities.Environment)
-	generator := new(generator.Generator)
+	world := new(entities.World)
 	characterCreator := character_creation.NewCharacterCreator(character)
 	return &TerminalFrontend{
 		Character:        character,
 		Environment:      environment,
-		Generator:        generator,
+		World:            world,
 		characterCreator: characterCreator,
 	}
 }
 
-func (t *TerminalFrontend) Run() error {
+func (t *TerminalFrontend) handlerRunner(handlers []func() (bool, error)) error {
 	var ok bool
+	var err error
+
+	for i := 0; i < len(handlers); i++ {
+		ok, err = handlers[i]()
+		if err != nil {
+			return err
+		}
+
+		if !ok {
+			i--
+		}
+	}
+
+	return nil
+}
+
+func (t *TerminalFrontend) Run() error {
 	var err error
 
 	characterCreation := []func() (bool, error){
 		t.createCharacter,
-		t.createAttributes,
+		// t.createAttributes,
 		t.buyAttributes,
 	}
 
@@ -49,19 +68,118 @@ func (t *TerminalFrontend) Run() error {
 		t.Character = character
 		t.characterCreator.Character = t.Character
 	} else {
-		for i := 0; i < len(characterCreation); i++ {
-			ok, err = characterCreation[i]()
+		err = t.handlerRunner(characterCreation)
+		if err != nil {
+			return err
+		}
+	}
+
+	worldCreation := []func() (bool, error){
+		t.createWorld,
+	}
+
+	world, found, err := repositories.FindWorld()
+	if err != nil {
+		return err
+	}
+
+	if found && world.IsValid() {
+		t.World = world
+	} else {
+		err = t.handlerRunner(worldCreation)
+		if err != nil {
+			return err
+		}
+	}
+
+	for {
+		show("Generating environment...", Green, true)
+		t.Environment, err = generator.Environment(
+			t.World,
+		)
+		if err != nil {
+			return err
+		}
+
+		show(t.Environment.Present(), Yellow, true)
+
+		for i := 0; i < 5; i++ {
+			show("Generating situation...", Green, true)
+			situation, err := generator.Situation(
+				t.Character,
+				t.World,
+				t.Environment,
+				true,
+			)
 			if err != nil {
 				return err
 			}
 
-			if !ok {
-				i--
+			show(situation, Yellow, true)
+
+			t.Environment.AddSituation(situation)
+
+			playerDecision := askFor("What do you do?", Yellow)
+			for len(playerDecision) == 0 {
+				show("Invalid input", Red, true)
+				playerDecision = askFor("What do you do?", Yellow)
+			}
+
+			decisionResult, err := generator.Decision(
+				t.World,
+				t.Environment,
+				t.Environment.LastSituation(),
+				playerDecision,
+			)
+			if err != nil {
+				return err
+			}
+
+			roll := dice.Roll(1, 20).Value()
+			success := roll.Get() >= decisionResult.NeededRoll
+			startsBattle := decisionResult.AlwaysStartsBattle || (!success && decisionResult.FailStartsBattle)
+
+			outcome, err := generator.DecisionOutcome(
+				t.World,
+				t.Environment,
+				t.Environment.LastSituation(),
+				playerDecision,
+				success,
+				startsBattle,
+			)
+			if err != nil {
+				return err
+			}
+
+			if startsBattle {
+				if decisionResult.FailStartsBattle {
+					show("Needs to roll at least: "+strconv.Itoa(decisionResult.NeededRoll), Green, true)
+					roll.Present()
+					t.Environment.FailedLastSituation = true
+				}
+
+				show(outcome, Blue, true)
+
+				show("You are in a battle!", Red, true)
+
+				t.Environment.FailedLastSituation = false
+			} else {
+				show("Needs to roll at least: "+strconv.Itoa(decisionResult.NeededRoll), Green, true)
+				show(roll.Present(), Yellow, true)
+				if success {
+					show("You succeeded!", Green, true)
+				} else {
+					show("You failed!", Red, true)
+				}
+
+				show(outcome, Blue, true)
+
+				t.Environment.FailedLastSituation = !success
 			}
 		}
-	}
 
-	return nil
+		show("Moving to a new environment...", Green, true)
+	}
 }
 
 func (t *TerminalFrontend) createCharacter() (bool, error) {
@@ -155,7 +273,7 @@ func (t *TerminalFrontend) buyAttributes() (bool, error) {
 			continue
 		}
 
-		cost := attributeValue - 8
+		cost := tables.AttributeCost(attributeValue)
 
 		if cost > buyPoints {
 			show("You don't have enough points", Red, true)
@@ -182,6 +300,32 @@ func (t *TerminalFrontend) buyAttributes() (bool, error) {
 	}
 
 	err := repositories.SaveMainCharacter(t.Character)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (t *TerminalFrontend) createWorld() (bool, error) {
+	show("Lets start creating your world!", Green, true)
+	if t.World.Name == "" {
+		t.World.Name = askFor("World name", Yellow)
+		if t.World.Name == "" {
+			show("World name is required", Red, true)
+			return false, nil
+		}
+	}
+
+	if t.World.Description == "" {
+		t.World.Description = askFor("World description", Yellow)
+		if t.World.Description == "" {
+			show("World description is required", Red, true)
+			return false, nil
+		}
+	}
+
+	err := repositories.SaveWorld(t.World)
 	if err != nil {
 		return false, err
 	}
