@@ -1,35 +1,74 @@
 package entities
 
-import "strings"
+import (
+	"fmt"
+	"strings"
 
-type Environment struct {
-	Name        string
-	Description string
+	"github.com/reonardoleis/adventurer/internal/utils"
+)
 
-	Characters []Character
-	Items      []Item
-
-	SubEnvironments []Environment
-
-	FailedLastSituation bool
-
-	Situations []string
+type Situation struct {
+	Content  string
+	Decision string
+	Outcome  string
 }
 
-func (e Environment) LastSituation() string {
+type Environment struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+
+	Characters []Character `json:"characters"`
+	Items      []Item
+
+	CurrentSituation    *Situation
+	FailedLastSituation bool
+
+	Situations []*Situation
+}
+
+func (e Environment) LastSituation() *Situation {
 	if len(e.Situations) == 0 {
-		return ""
+		return &Situation{}
 	}
 
 	return e.Situations[len(e.Situations)-1]
 }
 
-func (e *Environment) AddSituation(situation string) {
-	e.Situations = append(e.Situations, situation)
+func (e *Environment) SetNewSituation(situation *Situation) {
+	if e.CurrentSituation != nil {
+		e.Situations = append(e.Situations, e.CurrentSituation)
+	}
+	e.CurrentSituation = situation
+}
+
+func (e *Environment) SendSituationsToHistory() {
+	if e.CurrentSituation != nil {
+		e.Situations = append(e.Situations, e.CurrentSituation)
+	}
+}
+
+func (e *Environment) SetCurrentSituationDecision(decision string) {
+	e.CurrentSituation.Decision = decision
+}
+
+func (e *Environment) SetCurrentSituationOutcome(outcome string) {
+	e.CurrentSituation.Outcome = outcome
 }
 
 func (e Environment) Present() string {
-	return "You are in " + e.Name + ". " + e.Description
+	return utils.SprintfSeparator(
+		"[Environment: %s]\n%s",
+		"-", 10,
+		e.Name, e.Description,
+	)
+}
+
+func (s Situation) PresentContent() string {
+	return utils.SprintfSeparator(
+		"%s",
+		"-", 10,
+		s.Content,
+	)
 }
 
 func (e Environment) GetCharacterData() string {
@@ -45,4 +84,27 @@ func (e Environment) GetCharacterData() string {
 	}
 
 	return strings.Join(data, ";;;")
+}
+
+func (e Environment) GetSituationsData() string {
+	data := make([]string, 0, len(e.Situations))
+	for _, s := range e.Situations {
+		data = append(data, fmt.Sprintf(
+			"Situation:%s|Decision:%s|Outcome:%s",
+			s.Content, s.Decision, s.Outcome,
+		))
+	}
+
+	return strings.Join(data, ";;;")
+}
+
+func (e Environment) GetCurrentSituationData() string {
+	if e.CurrentSituation == nil {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"Situation:%s|Decision:%s|Outcome:%s",
+		e.CurrentSituation.Content, e.CurrentSituation.Decision, e.CurrentSituation.Outcome,
+	)
 }

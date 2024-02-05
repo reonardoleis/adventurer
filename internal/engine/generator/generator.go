@@ -2,9 +2,6 @@ package generator
 
 import (
 	"encoding/json"
-	"math/rand"
-	"strconv"
-	"strings"
 
 	"github.com/reonardoleis/adventurer/internal/ai"
 	"github.com/reonardoleis/adventurer/internal/entities"
@@ -12,158 +9,172 @@ import (
 
 func Environment(
 	world *entities.World,
-) (*entities.Environment, error) {
-	env := new(entities.Environment)
-
-	prompt, err := PromptGenerateEnvironment.
-		Chain(Base).Chain(NumberOfCharacters).
-		Fill(
-			world.Name,
-			world.Description,
-			rand.Intn(6)+2,
-		)
+) (GeneratedEnvironment, error) {
+	prompt, err :=
+		Base.
+			Fill(
+				world.Name,
+				world.Description,
+				world.StoryLog,
+				world.MainCharacter.Name,
+				world.MainCharacter.Story,
+			).
+			Chain(CreateEnvironment).
+			Fill(
+				world.EnvironmentHistorySummary(),
+			).
+			Chain(Language("Portuguese")).
+			Finish()
 	if err != nil {
-		return nil, err
+		return GeneratedEnvironment{}, err
 	}
 
-	response, err := ai.Generate(
-		prompt.String(), nil, 1024, 1,
+	generatedEnvironment := new(GeneratedEnvironment)
+	resp, err := ai.Generate(
+		prompt,
+		nil,
+		1024,
+		0.75,
 	)
 	if err != nil {
-		return nil, err
+		return GeneratedEnvironment{}, err
 	}
 
-	err = json.Unmarshal([]byte(response), env)
+	err = json.Unmarshal([]byte(resp), generatedEnvironment)
 	if err != nil {
-		return nil, err
+		return GeneratedEnvironment{}, err
 	}
 
-	return env, nil
+	return *generatedEnvironment, nil
 }
 
 func Situation(
-	mainCharacter *entities.Character,
 	world *entities.World,
-	environment *entities.Environment,
-	startsBattle bool,
-) (string, error) {
-	prompt, err := PromptGenerateSituation.
-		Chain(Base).
-		Chain(MainCharacterInformation).
-		Chain(LastSituation).
-		Chain(CurrentEnvironment).
-		Chain(OtherCharactersInformation).
-		Fill(
-			startsBattle,
-			world.Name, world.Description,
-			mainCharacter.Name+mainCharacter.Story,
-			mainCharacter.Race+" - "+mainCharacter.Class,
-			environment.LastSituation(), environment.FailedLastSituation,
-			environment.Name+": "+environment.Description,
-			environment.GetCharacterData(),
-		)
+) (GeneratedSituation, error) {
+	prompt, err :=
+		Base.
+			Fill(
+				world.Name,
+				world.Description,
+				world.StoryLog,
+				world.MainCharacter.Name,
+				world.MainCharacter.Story,
+			).
+			Chain(CreateSituation).
+			Fill(
+				world.CurrentEnvironment.GetCurrentSituationData(),
+				world.CurrentEnvironment.Description,
+			).
+			Chain(Language("Portuguese")).
+			Finish()
 	if err != nil {
-		return "", err
+		return GeneratedSituation{}, err
 	}
 
-	situation, err := ai.Generate(
-		prompt.String(), []string{
-			"STORY_LOG: " + world.StoryLog,
-		}, 1024, 1,
+	generatedSituation := new(GeneratedSituation)
+	resp, err := ai.Generate(
+		prompt,
+		nil,
+		1024,
+		0.75,
 	)
 	if err != nil {
-		return "", err
+		return GeneratedSituation{}, err
 	}
 
-	return situation, nil
-}
+	err = json.Unmarshal([]byte(resp), generatedSituation)
+	if err != nil {
+		return GeneratedSituation{}, err
+	}
 
-type DecisionResult struct {
-	NeededRoll         int
-	FailStartsBattle   bool
-	AlwaysStartsBattle bool
+	return *generatedSituation, nil
 }
 
 func Decision(
 	world *entities.World,
-	environment *entities.Environment,
-	situation,
-	playerDecision string,
-) (d DecisionResult, err error) {
-	prompt, err := PromptGenerateDecision.
-		Chain(Base).
-		Chain(CurrentEnvironment).
-		Chain(LastSituation).
-		Fill(
-			world.Name, world.Description,
-			environment.Name+": "+environment.Description,
-			situation, environment.FailedLastSituation,
-		)
+) (d GeneratedDecisionRoll, err error) {
+	prompt, err :=
+		Base.
+			Fill(
+				world.CurrentEnvironment.Name,
+				world.CurrentEnvironment.Description,
+				world.StoryLog,
+				world.MainCharacter.Name,
+				world.MainCharacter.Story,
+			).
+			Chain(CreateRollForDecision).
+			Fill(
+				world.CurrentEnvironment.CurrentSituation.Content,
+				world.CurrentEnvironment.CurrentSituation.Decision,
+			).
+			Finish()
 	if err != nil {
-		return DecisionResult{}, err
+		return GeneratedDecisionRoll{}, err
 	}
 
-	response, err := ai.Generate(
-		prompt.String(), []string{
-			"STORY_LOG: " + world.StoryLog,
-		}, 1024, 0.5,
+	resp, err := ai.Generate(
+		prompt,
+		nil,
+		1024,
+		0.75,
 	)
+
 	if err != nil {
-		return DecisionResult{}, err
+		return GeneratedDecisionRoll{}, err
 	}
 
-	parts := strings.Split(response, ";;")
-
-	neededRoll, err := strconv.Atoi(parts[0])
+	err = json.Unmarshal([]byte(resp), &d)
 	if err != nil {
-		return DecisionResult{}, err
+		return GeneratedDecisionRoll{}, err
 	}
 
-	alwayStartsBattle, err := strconv.ParseBool(parts[1])
-	if err != nil {
-		return DecisionResult{}, err
-	}
-
-	failStartsBattle, err := strconv.ParseBool(parts[2])
-	if err != nil {
-		return DecisionResult{}, err
-	}
-
-	return DecisionResult{
-		NeededRoll:         neededRoll,
-		FailStartsBattle:   failStartsBattle,
-		AlwaysStartsBattle: alwayStartsBattle,
-	}, nil
+	return d, nil
 }
 
 func DecisionOutcome(
 	world *entities.World,
-	environment *entities.Environment,
-	situation,
-	playerDecision string,
-	playerSucceeded bool,
-	startedBattle bool,
-) (string, error) {
-	prompt, err := PromptGenerateDecisionOutcome.
-		Chain(Base).
-		Chain(LastSituation).
-		Chain(LastPlayerDecision).
-		Fill(
-			world.Name, world.Description,
-			situation, environment.FailedLastSituation,
-			playerDecision,
-			startedBattle, playerSucceeded,
-		)
+	succeeded bool,
+	failStartsBattle bool,
+	alwaysStartsBattle bool,
+) (GeneratedDecisionOutcome, error) {
+	prompt, err :=
+		Base.
+			Fill(
+				world.CurrentEnvironment.Name,
+				world.CurrentEnvironment.Description,
+				world.StoryLog,
+				world.MainCharacter.Name,
+				world.MainCharacter.Story,
+			).
+			Chain(CreateDecisionOutcome).
+			Fill(
+				world.CurrentEnvironment.CurrentSituation.Content,
+				world.CurrentEnvironment.CurrentSituation.Decision,
+				succeeded,
+				failStartsBattle,
+				alwaysStartsBattle,
+			).
+			Chain(Language("Portuguese")).
+			Finish()
 	if err != nil {
-		return "", err
+		return GeneratedDecisionOutcome{}, err
 	}
 
-	response, err := ai.Generate(
-		prompt.String(), nil, 1024, 0.5,
+	generatedDecisionOutcome := new(GeneratedDecisionOutcome)
+	resp, err := ai.Generate(
+		prompt,
+		nil,
+		1024,
+		0.75,
 	)
 	if err != nil {
-		return "", err
+		return GeneratedDecisionOutcome{}, err
 	}
 
-	return response, nil
+	err = json.Unmarshal([]byte(resp), generatedDecisionOutcome)
+	if err != nil {
+		return GeneratedDecisionOutcome{}, err
+	}
+
+	return *generatedDecisionOutcome, nil
 }

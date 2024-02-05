@@ -2,155 +2,119 @@ package generator
 
 import (
 	"fmt"
-	"strings"
 )
 
 type Prompt struct {
-	Content    string
-	fieldCount int
+	Content          string
+	neededValueCount int
+	valueCount       int
 }
 
-func (v Prompt) Fill(values ...any) (Prompt, error) {
-	if len(values) != v.fieldCount {
-		return v, fmt.Errorf(
-			"expected %d values, got %d",
-			v.fieldCount,
-			len(values),
-		)
-	}
-
+func (v Prompt) Fill(values ...any) Prompt {
 	v.Content = fmt.Sprintf(v.Content, values...)
-	return v, nil
+	v.valueCount += len(values)
+	return v
 }
 
 func (v Prompt) Chain(p Prompt) Prompt {
 	v.Content += "\n" + p.Content
-	v.fieldCount += p.fieldCount
+	v.neededValueCount += p.neededValueCount
 	return v
 }
 
-func (v Prompt) String() string {
-	return v.Content
-}
+func (v Prompt) Finish() (string, error) {
+	if v.neededValueCount != v.valueCount {
+		return "", fmt.Errorf("prompt has %d values, but %d are needed", v.valueCount, v.neededValueCount)
+	}
 
-func SetBasePromptLanguage(language string) {
-	Base.Content = strings.Replace(
-		Base.Content,
-		"English",
-		language,
-		-1,
-	)
+	return v.Content, nil
 }
 
 var (
 	Base Prompt = Prompt{
-		Content: `You are generating an environment for a "%s" RPG.
-		The RPG is set in a "%s" world.
-		You do not need to always be totally focused on the theme, but it should be the main focus.
-		Example: if the theme is on a Cyberpunk world with rogue Androids, you can have situation that the rogue Androids are not present, preferring the focus on the Cyberpunk world.
-		Always be focusing on maintaining the theme, but do not be afraid to be creative.
-		This is a solo RPG, so never mention other players nor let other characters join the main character.
-		The USER has preference to decide things about the main character, so if the player says that the main character do not like charity, then you can't make the main character do charity and you must consider that when generating the content.
-		Generate in the following language: English.
-		Always do the shortest you can, as if it were messages in a chat.`,
-		fieldCount: 2,
+		Content: `You are generating RPG content for a world callled "%s".
+		The world is described as: "%s".
+		Story log to avoid generating similar content: "%s".
+		Try to not repeat things from the story log. Example: if the story log contains information that John Doe went to Bar X, you should not generate a situation where John Doe goes to Bar X.
+		The narrative is focused around the main character: "%s" who is a "%s".
+		It is a solo RPG, no one never joins the main character.`,
+		neededValueCount: 5,
 	}
 
-	NumberOfCharacters Prompt = Prompt{
-		Content:    `Number of characters on the environment other than the player (never in a group with the player): %d`,
-		fieldCount: 1,
-	}
-
-	MainCharacterInformation Prompt = Prompt{
-		Content: `Main character name and story: "%s"
-		Main character race and class: "%s"`,
-		fieldCount: 2,
-	}
-
-	LastSituation Prompt = Prompt{
-		Content: `Last situation: "%s"
-		Did the player failed last situation: %t`,
-		fieldCount: 2,
-	}
-
-	CurrentEnvironment Prompt = Prompt{
-		Content:    `Current environment: "%s"`,
-		fieldCount: 1,
-	}
-
-	LastPlayerDecision Prompt = Prompt{
-		Content: `Last player decision: "%s"
-		Did it start a battle: %t
-		Was it a success: %t`,
-		fieldCount: 3,
-	}
-
-	OtherCharactersInformation Prompt = Prompt{
-		Content:    `Other characters on the environment are: %s`,
-		fieldCount: 1,
-	}
-
-	PromptGenerateEnvironment = Prompt{
-		Content: `Generate the name of the environment, the description of the environment, a list of character that are in the environment.
-		You should answer in the following format, with it only:
-	
+	CreateEnvironment Prompt = Prompt{
+		Content: `You should generate environment data that will be used in the story.
+		Avoid generating environment data that is too to these previous environments: "%s".,
+		You should answer with a JSON only, with the following format:
 		{
-			"name": "Environment 1",
-			"description": "Desc 1",
+			"name": "The name of the environment",
+			"description": "The description of the environment",
 			"characters": [
-				{
-					"name": "Character 1",
-					"story": "Story 1",
-					"is_hostile": true
-				},
-				...add more characters here until you reach the number of characters...
+				{ 
+					"name": "The name of the character",
+					"story": "The story of the character",
+					"race": "The race of the character",
+					"class": "The class of the character"
+				}, ...
 			]
 		}`,
-		fieldCount: 0,
+		neededValueCount: 1,
 	}
 
-	PromptGenerateSituation = Prompt{
-		Content: `The new situation must be related to the environment and have continuity with the last situation.
-		Move on from the last situation to a new one, or create a new one if there was none.
-		Be creative, do not repeat the same situation twice.
-		The situation does not have to be one hundred percent related to the environment, but it should be possible to happen in it.
-		If the last situation is empty, consider that you should generate the first situation, the RPG campaign is starting, so make it interesting.
-		The situation do not have to include the characters, be creative. It can be as simple as the characters finding a treasure or something on the floor, or as complex as a battle with all the characters.
-		Generate a situation that the characters can find themselves in.
-		
-		Consider the STORY_LOG content to help you create the situation, avoid repeating the same situation and avoiding making unrelated situations.
-		Should it start a battle? %t
-		`,
-		fieldCount: 1,
+	CreateSituation Prompt = Prompt{
+		Content: `You should generate a situation that will be used in the story.
+		Previous situation information: "%s".
+		The current environment is: "%s".
+		Maintain continuity with the environment, previous situations and the story log.
+		IMPORTANT: the outcome of the situation should always be the starting point of the next situation.
+		NEVER repeat things from the story log.
+		IMPORTANT: do it highly immersive and detailed. Example: if in the previous outcome the character went to his home, you should describe the home in the next situation, the player will choose what to do in the home, but if you think it is important to describe a thing that happened out of player's control, you should do it.
+		If the previous situation is not empty, you should generate a situation that is a consequence of the last one, for example: if the last situation of the list was "John Doe escaped" then the new situation could start with "After John Doe escaped, he ...".
+		You should answer with a JSON only, with the following format:
+		{
+			"situation": "The situation content"
+		}`,
+		neededValueCount: 2,
 	}
 
-	PromptGenerateDecision = Prompt{
-		Content: `List of things to generate:
-		NUMBER: The number of dice to roll you find appropriate, from 1 to 20.
-			ALWAYS_START_BATTLE: true or false, if the decision always starts a battle. Be evil here.
-			FAIL_START_BATTLE: true or false, if the decision starts a battle when failed. Be evil here.
-
-			Examples on "difficulty of the decision":
-			1. If the decision considering the situation is easy, the number of dice to roll should be low (0 to 8)
-			2. If the decision considering the situation is medium, the number of dice to roll should be medium (8 to 15)
-			3. If the decision considering the situation is hard, the number of dice to roll should be high (15 to 20)
-
-			Example of easy decision as if the situation were "The character is walking in a safe forest": "I decide to smile!"
-			Example of medium decision as if the situation were "The character is walking in a forest at night": "I decide to explore the area!"
-			Example of hard decision as if the situation were "The character is walking in a forest at night and hears a noise": "I yell at the noise, come at me!"
-
-			IMPORTANT: if it is a "pathetic" decision without any chance of failure (based on the decision + situation), roll 0 and no battle.
-			Prioritize situations with low or 0 rolls, and no battle. If the situation is hard, prioritize situations with high rolls and battle.
-			Your return format should follow the following EXAMPLE format, answering only with the values, in the order they are listed above, separated by two semicolons, like this:
-		
-			NUMBER;;ALWAYS_START_BATTLE;;FAIL_START_BATTLE
-			
-			Replace the values with the ones you generated. Never label the values, only the values separated by two semicolons.`,
-		fieldCount: 0,
+	CreateDecisionOutcome Prompt = Prompt{
+		Content: `You should generate the outcome of the situation.
+		Besides the outcome content, you should fill the field "to_remember" if you detect that the outcome should be remembered for future situations. This field should be really short, like "John Doe is a liar".
+		The situation is: "%s".
+		The player's decision was: "%s".
+		The player succeded? %t.
+		Should you start a battle if the player failed? %t.
+		Should you always start a battle? %t.
+		If the player failed, the outcome should be a consequence of the failure.
+		If the player succeeded, the outcome should be a consequence of the success.
+		You should answer with a JSON only, with the following format:
+		{
+			"outcome": "The outcome content",
+			"battle_started": false // or true,
+		}`,
+		neededValueCount: 5,
 	}
 
-	PromptGenerateDecisionOutcome = Prompt{
-		Content:    `Generate the outcome text for the given decision.`,
-		fieldCount: 0,
+	CreateRollForDecision Prompt = Prompt{
+		Content: `You should generate a roll for the player's decision.
+		The situation is: "%s".
+		The player's decision was: "%s".
+		Generate "level" for the roll: low (0-5), medium (6-10), high (11-15), very_high (16-20).
+		Generate "fail_starts_battle" for the roll: true or false. Consider the situation as if it was in real life.
+		Generate "always_starts_battle" for the roll: true or false. Consider the situation as if it was in real life.
+		The "level" should consider the factibility of the decision given the situation.
+		You should answer with a JSON only, with the following format:
+		{
+			"level": "low, medium, high, very_high",
+			"fail_starts_battle": true, // or false
+			"always_starts_battle": false // or true
+		}`,
+		neededValueCount: 2,
 	}
 )
+
+func Language(language string) Prompt {
+	return Prompt{
+		Content:          fmt.Sprintf("Generate the content in %s. JSON keys must remain in the original language.", language),
+		neededValueCount: 0,
+	}
+}

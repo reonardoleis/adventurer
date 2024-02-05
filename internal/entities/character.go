@@ -29,6 +29,10 @@ type Character struct {
 	Attributes *Attributes
 }
 
+func (c Character) ActionText() string {
+	return c.Name + ", what do you want to do?"
+}
+
 func (c *Character) AddExperience() {
 	c.Experience++
 	if c.Experience >= c.NextLevel {

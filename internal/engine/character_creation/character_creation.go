@@ -1,76 +1,79 @@
 package character_creation
 
 import (
-	"github.com/reonardoleis/adventurer/internal/dice"
+	"errors"
+
 	"github.com/reonardoleis/adventurer/internal/entities"
+	"github.com/reonardoleis/adventurer/internal/tables"
 )
 
+var attributeList = []string{
+	"Strength",
+	"Dexterity",
+	"Constitution",
+	"Intelligence",
+	"Wisdom",
+	"Charisma",
+}
+
 type CharacterCreator struct {
-	Character     *entities.Character
-	AttributeRoll int
+	Character        *entities.Character
+	currentAttribute int
+	buyPoints        int
 }
 
 func NewCharacterCreator(character *entities.Character) *CharacterCreator {
-	return &CharacterCreator{Character: character}
+	return &CharacterCreator{Character: character, buyPoints: 27}
 }
 
-func (cc *CharacterCreator) CreateCharacter(name, story, race, class string) {
+func (cc *CharacterCreator) SetName(name string) {
 	cc.Character.Name = name
+}
+
+func (cc *CharacterCreator) SetStory(story string) {
 	cc.Character.Story = story
-	cc.Character.Race = race
-	cc.Character.Class = class
-	cc.Character.Level = 1
-	cc.Character.Experience = 0
-	cc.Character.NextLevel = 100
-
-	cc.Character.Inventory = make([]*entities.InventoryItem, 0)
-	cc.Character.Attributes = entities.NewAttributes()
 }
 
-func (cc *CharacterCreator) RollAttributes() {
-	cc.AttributeRoll = dice.Roll(4, 6).GetGreaterN(3).Sum()
-}
-
-func (cc *CharacterCreator) SetAttributes(
-	strength, dexterity, constitution, intelligence, wisdom, charisma int,
-) bool {
-	if strength+dexterity+constitution+intelligence+wisdom+charisma != cc.AttributeRoll {
-		return false
+func (cc *CharacterCreator) SetAttributeTo(val int) error {
+	if cc.currentAttribute >= len(attributeList) {
+		return errors.New("all attributes are already set")
 	}
 
-	cc.Character.Attributes.Strength.Value = strength
-	cc.Character.Attributes.Dexterity.Value = dexterity
-	cc.Character.Attributes.Constitution.Value = constitution
-	cc.Character.Attributes.Intelligence.Value = intelligence
-	cc.Character.Attributes.Wisdom.Value = wisdom
-	cc.Character.Attributes.Charisma.Value = charisma
+	if cc.buyPoints-tables.AttributeCost(val) < 0 {
+		return errors.New("not enough points to buy this attribute")
+	}
+
+	switch attributeList[cc.currentAttribute] {
+	case "Strength":
+		cc.Character.Attributes.Strength = &entities.Attribute{Value: val}
+	case "Dexterity":
+		cc.Character.Attributes.Dexterity = &entities.Attribute{Value: val}
+	case "Constitution":
+		cc.Character.Attributes.Constitution = &entities.Attribute{Value: val}
+	case "Intelligence":
+		cc.Character.Attributes.Intelligence = &entities.Attribute{Value: val}
+	case "Wisdom":
+		cc.Character.Attributes.Wisdom = &entities.Attribute{Value: val}
+	case "Charisma":
+		cc.Character.Attributes.Charisma = &entities.Attribute{Value: val}
+	}
 
 	cc.Character.Attributes.SetModifiers()
 
-	return true
+	cc.currentAttribute++
+	cc.buyPoints -= tables.AttributeCost(val)
+
+	return nil
 }
 
-func (cc *CharacterCreator) BuyAttributes(
-	strength, dexterity, constitution, intelligence, wisdom, charisma int,
-) bool {
-	if strength < 8 || dexterity < 8 || constitution < 8 || intelligence < 8 || wisdom < 8 || charisma < 8 {
-		return false
+func (cc *CharacterCreator) GetPointsLeft() int {
+	return cc.buyPoints
+}
+
+func (cc *CharacterCreator) GetCurrentAttributeName() string {
+	if cc.currentAttribute >= len(attributeList) {
+		return ""
 	}
 
-	if strength > 15 || dexterity > 15 || constitution > 15 || intelligence > 15 || wisdom > 15 || charisma > 15 {
-		return false
-	}
-
-	cc.Character.Attributes.Strength.Value = strength
-	cc.Character.Attributes.Dexterity.Value = dexterity
-	cc.Character.Attributes.Constitution.Value = constitution
-	cc.Character.Attributes.Intelligence.Value = intelligence
-	cc.Character.Attributes.Wisdom.Value = wisdom
-	cc.Character.Attributes.Charisma.Value = charisma
-
-	cc.Character.Attributes.SetModifiers()
-
-	cc.Character.CreationFinished = true
-
-	return true
+	return attributeList[cc.currentAttribute]
 }

@@ -17,7 +17,12 @@ func get() *openai.Client {
 	return cli
 }
 
-func Generate(prompt string, additionalInformation []string, maxTokens int, temperature float32) (string, error) {
+func Generate(
+	prompt string,
+	additionalInformation []string,
+	maxTokens int,
+	temperature float32,
+) (string, error) {
 	cli := get()
 	messages := make([]openai.ChatCompletionMessage, len(additionalInformation)+1)
 
@@ -48,4 +53,23 @@ func Generate(prompt string, additionalInformation []string, maxTokens int, temp
 	}
 
 	return resp.Choices[0].Message.Content, nil
+}
+
+func Embed(text string) ([]float32, error) {
+	cli := get()
+	resp, err := cli.CreateEmbeddings(
+		context.Background(),
+		openai.EmbeddingRequestStrings{
+			Model: openai.SmallEmbedding3,
+			Input: []string{
+				text,
+			},
+		},
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Data[0].Embedding, nil
 }

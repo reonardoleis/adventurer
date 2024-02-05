@@ -31,6 +31,15 @@ func Roll(count, sides int) Dice {
 	return dice
 }
 
+func DecisionRoll(dificulty [2]int) (rolled int, needed int, success bool) {
+	lowestBound := dificulty[0]
+	highestBound := dificulty[1]
+	needed = rand.Intn(highestBound-lowestBound) + lowestBound
+	rolled = Roll(1, 20).Value().Value
+
+	return rolled, needed, rolled >= needed
+}
+
 func (d Dice) Value() Value {
 	if len(d.Rolls) == 0 {
 		return Value{Value: 0}
